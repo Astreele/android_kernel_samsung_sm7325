@@ -37,6 +37,11 @@ cp "${KROOT}/arch/arm64/boot/Image" "${STAGE}/Image"
 mkdir -p "${STAGE}/modules/vendor/lib/modules"
 : > "${OUT}/MODULES.txt"
 : > "${OUT}/MISSING.txt"
+# Guard: duplicate basenames anywhere in the built tree would silently shadow
+# each other via head -1 below (proven necessary by bone-machine's packager,
+# which aborts on the same condition).
+DUPES="$(find "${KROOT}" -name '*.ko' -printf '%f\n' 2>/dev/null | sort | uniq -d)"
+if [ -n "${DUPES}" ]; then echo "DUPLICATE MODULE FILENAMES (would shadow):"; echo "${DUPES}"; exit 1; fi
 while IFS= read -r mod; do
   [ -z "$mod" ] && continue
   # modules land next to their drivers (in-tree build); match exact filename

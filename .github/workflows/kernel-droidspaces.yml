@@ -135,6 +135,7 @@ jobs:
           make -j"$(nproc)" ARCH=arm64 CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-none-linux-gnu- \
+            KBUILD_BUILD_USER=droidspaces-ci KBUILD_BUILD_HOST=sm7325-ci \
             Image modules dtbs
           echo "KERNELRELEASE=$(make -s ARCH=arm64 kernelrelease)" >> "${GITHUB_ENV}"
           ls -la arch/arm64/boot/Image
