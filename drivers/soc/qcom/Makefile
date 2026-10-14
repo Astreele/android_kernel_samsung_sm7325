@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 CFLAGS_rpmh-rsc.o := -I$(src)
+# hyp_core_ctl.o re-includes its local header through TRACE_INCLUDE_PATH=.,
+# same requirement as rpmh-rsc.o above (same fix class as walt/hid/cam/rmnet).
+CFLAGS_hyp_core_ctl.o := -I$(src)
 obj-$(CONFIG_QCOM_AOSS_QMP) +=	qcom_aoss.o
 obj-$(CONFIG_QCOM_GENI_SE) +=	qcom-geni-se.o
 obj-$(CONFIG_QCOM_COMMAND_DB) += cmd-db.o

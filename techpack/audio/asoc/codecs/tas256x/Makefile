@@ -1,5 +1,8 @@
 #EXTRA_CFLAGS= -I$(shell pwd)
-ccflags-y += -I$(shell pwd)
+# NOTE: -I$(shell pwd) evaluates once at top-level parse time (== tree root),
+# so it never pointed here. -I$(src) is the kbuild-correct per-directory form
+# the TU's quoted "physical_layer/inc/..." includes require to resolve.
+ccflags-y += -I$(src)
 
 obj-y += snd-soc-tas256x.o
 
