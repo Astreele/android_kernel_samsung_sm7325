@@ -18,6 +18,11 @@ MUST_Y=(
 # section (no padding trick covers them - would bootloop on stock modules).
 MUST_OFF=( CFS_BANDWIDTH CGROUP_PIDS )
 
+# Build-required (not a Droidspaces feature): stock Samsung sec_debug code
+# trips modpost's section-mismatch gate under Snapdragon LLVM, aborting the
+# whole build. Warn-only changes nothing in the image, just lets it link.
+MUST_Y+=( SECTION_MISMATCH_WARN_ONLY )
+
 fail=0
 for k in "${MUST_Y[@]}"; do
   grep -q "^CONFIG_${k}=y$" .config || { echo "MISSING/WARN: CONFIG_${k} is not =y"; fail=1; }
