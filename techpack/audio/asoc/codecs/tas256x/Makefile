@@ -1,5 +1,8 @@
 #EXTRA_CFLAGS= -I$(shell pwd)
-ccflags-y += -I$(shell pwd)
+# Belt-and-braces with Kbuild in this directory (kbuild prefers Kbuild when
+# both exist): whichever file governs the build, the TU's quoted
+# "physical_layer/inc/..." includes need this directory on the path.
+ccflags-y += -I$(src)
 
 obj-y += snd-soc-tas256x.o
 
