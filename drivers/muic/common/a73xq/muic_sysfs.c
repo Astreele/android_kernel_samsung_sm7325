@@ -32,7 +32,7 @@
 
 #if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
 #include <linux/sec_batt.h>
-#include "../../battery/common/sec_charging_common.h"
+#include "../../../battery/common/sec_charging_common.h"
 #endif
 #if IS_ENABLED(CONFIG_ARCH_QCOM) && !defined(CONFIG_USB_ARCH_EXYNOS) && !defined(CONFIG_ARCH_EXYNOS)
 #include <linux/sec_param.h>

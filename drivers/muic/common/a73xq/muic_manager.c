@@ -53,7 +53,7 @@
 #include <linux/usb/typec/manager/usb_typec_manager_notifier.h>
 #endif
 #if IS_ENABLED(CONFIG_S2MU106_TYPEC_WATER)
-#include "../../battery/charger/s2mu106_charger/s2mu106_pmeter.h"
+#include "../../../battery/charger/s2mu106_charger/s2mu106_pmeter.h"
 #endif
 
 #define MUIC_PDIC_NOTI_ATTACH (1)
