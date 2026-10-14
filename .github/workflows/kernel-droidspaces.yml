@@ -141,6 +141,14 @@ jobs:
           ls -la arch/arm64/boot/Image
           echo "MODULES_BUILT=$(find . -name '*.ko' | wc -l)"
 
+      - name: Strip modules (defconfig carries DEBUG_INFO=y; unstripped the
+          set is ~500MB vs ~384MB free on vendor - must not ship that way)
+        run: |
+          STRIP_BIN="${HOME}/toolchains/arm-gnu-14.2/bin/aarch64-none-linux-gnu-strip"
+          test -x "${STRIP_BIN}" || { echo "strip missing:"; find ~/toolchains -maxdepth 4 -name '*strip' 2>/dev/null | head; exit 1; }
+          find . -name '*.ko' -exec "${STRIP_BIN}" --strip-debug {} +
+          echo "stripped modules total: $(du -cb $(find . -name '*.ko') | tail -1)"
+
       - name: Package AnyKernel3 (keep stock dtb/dtbo, refresh vendor_boot modules)
         run: |
           git clone --depth 1 "${AK3_URL}" ak3
