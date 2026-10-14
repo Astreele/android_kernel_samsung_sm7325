@@ -95,8 +95,18 @@ jobs:
           test -x ~/toolchains/llvm-arm-toolchain-ship-10.0.9/bin/clang || { echo "clang misplaced:"; find ~/toolchains -maxdepth 3 2>/dev/null | head -20; exit 1; }
           test -x ~/toolchains/arm-gnu-14.2/bin/aarch64-none-linux-gnu-gcc || { echo "GNU cross misplaced:"; find ~/toolchains -maxdepth 4 -name '*gcc' 2>/dev/null | head; exit 1; }
           # Snapdragon LLVM wants libtinfo.so.5; Ubuntu 24.04 ships only .so.6.
+          # Export via GITHUB_ENV so EVERY later step (preflight included)
+          # inherits it - a per-step export here would die with this shell.
           TINFO="$(ldconfig -p | awk '/libtinfo\.so\.6/ && !seen++ {print $NF}')"
+          if [ -z "${TINFO}" ]; then
+            sudo apt install -y libncurses6
+            TINFO="$(ldconfig -p | awk '/libtinfo\.so\.6/ && !seen++ {print $NF}')"
+          fi
+          [ -n "${TINFO}" ] || { echo "no libtinfo.so.6 on the runner"; exit 1; }
           mkdir -p ~/toolchains/.compat && ln -sf "${TINFO}" ~/toolchains/.compat/libtinfo.so.5
+          test -f ~/toolchains/.compat/libtinfo.so.5
+          echo "LD_LIBRARY_PATH=${HOME}/toolchains/.compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
+          "${HOME}/toolchains/llvm-arm-toolchain-ship-10.0.9/bin/clang" --version | head -1
 
       - name: Preflight (defconfig resolves, all flags present)
         run: |
