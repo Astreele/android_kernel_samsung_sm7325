@@ -1,0 +1,143 @@
+name: Droidspaces kernel (sm7325)
+
+# Standalone kernel + AnyKernel3 for LineageOS sm7325 devices.
+# Builds from a branch that already contains the defconfig edits and the
+# two kABI patches (committed - never build from a dirty tree: LOCALVERSION_AUTO
+# bakes `git describe` and `-dirty` into the module version magic).
+#
+# First run: use workflow_dispatch on your droidspaces branch, one device at a
+# time if you want (matrix runs all three in parallel by default).
+
+on:
+  workflow_dispatch:
+
+# Least privilege: read the repo; upload-artifact needs the actions scope.
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLANG_URL: https://github.com/ravindu644/Android-Kernel-Tutorials/releases/download/toolchains/llvm-arm-toolchain-ship-10.0.9.tar.gz
+  GCC_URL: https://github.com/ravindu644/Android-Kernel-Tutorials/releases/download/toolchains/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
+  AK3_URL: https://github.com/osm0sis/AnyKernel3.git
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run shellcheck (UN1CA gate; template deviations documented in-file)
+        run: shellcheck -e SC1090,SC1091 -s bash droidspaces/*.sh
+
+  build:
+    name: Build (${{ matrix.device }})
+    needs: shellcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device: a52sxq
+            defconfig: vendor/lineage-a52sxq_defconfig
+          - device: a73xq
+            defconfig: vendor/lineage-a73xq_defconfig
+          - device: m52xq
+            defconfig: vendor/lineage-m52xq_defconfig
+
+    steps:
+      - name: "Free disk space (kernel needs ~30GB: source + toolchains + out/)"
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h / | tail -1
+          FREE_GB="$(df --output=avail -BG / | tail -1 | tr -dc '0-9')"
+          [ "${FREE_GB}" -ge 30 ] || { echo "only ${FREE_GB}GB free, need 30GB - extend cleanup"; exit 1; }
+
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential bc bison flex pkg-config git curl tar \
+            xz-utils zip unzip cpio rsync kmod perl python3 python-is-python3 \
+            libssl-dev libelf-dev pahole libncurses-dev zlib1g-dev libyaml-dev \
+            lz4 zstd device-tree-compiler
+          # NOTE: Ubuntu 24.04 has no libtinfo5 (old Snapdragon LLVM wants it);
+          # the build step below points the toolchain at libtinfo.so.6 instead.
+
+      - name: Checkout kernel (full history + tags for clean version magic)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream tags (version magic must match Lineage's scheme)
+        run: |
+          git fetch --tags https://github.com/LineageOS/android_kernel_samsung_sm7325.git lineage-24.0 || true
+          git describe --tags 2>&1 | head -1 || true
+          git status --short | head -20
+          test -z "$(git status --porcelain)" || { echo "TREE IS DIRTY - refusing (would bake -dirty into vermagic)"; exit 1; }
+
+      - name: Fetch toolchains (pinned, era-correct for 5.4 qGKI)
+        run: |
+          mkdir -p ~/toolchains
+          curl -Lf --retry 3 "${CLANG_URL}" | tar -xz -C ~/toolchains
+          curl -Lf --retry 3 "${GCC_URL}" | tar -xJ -C ~/toolchains
+          ls ~/toolchains
+          ~/toolchains/*/bin/clang --version 2>/dev/null | head -1 || find ~/toolchains -name clang -type f | head -3
+          TINFO="$(ldconfig -p | awk '/libtinfo\.so\.6/ && !seen++ {print $NF}')"
+          mkdir -p ~/toolchains/.compat && ln -sf "${TINFO}" ~/toolchains/.compat/libtinfo.so.5
+
+      - name: Preflight (defconfig resolves, all flags present)
+        run: |
+          # Deterministic toolchain roots (same layout as ravindu's build_qGKI.sh).
+          test -x "${HOME}/toolchains/llvm-arm-toolchain-ship-10.0.9/bin/clang" \
+            || { echo "clang missing under ~/toolchains"; find ~/toolchains -maxdepth 3 | head; exit 1; }
+          "${HOME}/toolchains/llvm-arm-toolchain-ship-10.0.9/bin/clang" --version | head -1
+          export PATH="${HOME}/toolchains/llvm-arm-toolchain-ship-10.0.9/bin:${PATH}"
+          make ARCH=arm64 CC=clang "${{ matrix.defconfig }}"
+          make ARCH=arm64 CC=clang olddefconfig
+          ./droidspaces/preflight.sh "${{ matrix.device }}"
+
+      - name: Build kernel + modules + dtbs
+        run: |
+          # Stock-style 5.4 build (NOT LLVM=1): Clang compiles, the GNU cross
+          # assembles/links - byte-for-byte the recipe of ravindu's proven
+          # build_qGKI.sh for 5.4 qGKI trees. LLVM=1 was considered (Lineage
+          # trees usually accept it) but rejected for v1: it hard-requires
+          # ld.lld et al on PATH, whose location in this toolchain snapshot is
+          # unverified, while the GNU cross path below IS verified present.
+          # To experiment later, add LLVM=1 LLVM_IAS=1 to the make line.
+          export PATH="${HOME}/toolchains/llvm-arm-toolchain-ship-10.0.9/bin:${HOME}/toolchains/arm-gnu-14.2/bin:${PATH}"
+          export LD_LIBRARY_PATH="${HOME}/toolchains/.compat:${LD_LIBRARY_PATH:-}"
+          test -x "${HOME}/toolchains/arm-gnu-14.2/bin/aarch64-none-linux-gnu-gcc" \
+            || { echo "GNU cross missing"; find ~/toolchains -maxdepth 4 -name '*gcc' | head; exit 1; }
+          make -j"$(nproc)" ARCH=arm64 CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-none-linux-gnu- \
+            Image modules dtbs
+          echo "KERNELRELEASE=$(make -s ARCH=arm64 kernelrelease)" >> "${GITHUB_ENV}"
+          ls -la arch/arm64/boot/Image
+          echo "MODULES_BUILT=$(find . -name '*.ko' | wc -l)"
+
+      - name: Package AnyKernel3 (keep stock dtb/dtbo, refresh vendor_boot modules)
+        run: |
+          git clone --depth 1 "${AK3_URL}" ak3
+          (cd ak3 && git rev-parse HEAD > ../AK3_SHA)
+          ./droidspaces/package.sh "${{ matrix.device }}" "$(pwd)" "$(pwd)/ak3" "${KERNELRELEASE}"
+
+      - name: Upload flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Droidspaces-sm7325-${{ matrix.device }}-${{ env.KERNELRELEASE }}
+          path: |
+            out/*.zip
+            out/*.sha256
+            out/AK3_SHA
+            out/MODULES.txt
+            out/MISSING.txt
