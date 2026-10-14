@@ -6,13 +6,16 @@
 # at flash time), so SC2289/SC2034 are accepted deviations, disabled below.
 # shellcheck disable=SC2289,SC2034
 #
-# Two-partition profile (hdr v3, A-only, dynamic super):
-#   1. boot        <- our Image (stock ramdisk + stock dtb kept: our tree
+# Boot-only profile, verified against the official Lineage nightly:
+#   - boot        <- our Image (stock ramdisk + stock dtb kept: our tree
 #                     changes no driver and no DT binding)
-#   2. vendor_boot <- our 54 rebuilt modules injected into the vendor ramdisk
-#                     (vendor_ramdisk/ dir in this zip; ak3-core auto-stages it
-#                     into vendor_boot-files). Stock ramdisk + stock dtbo kept.
-# Recovery is never touched (it carries its own kernel + modules).
+#   - /vendor     <- our 87 rebuilt modules into vendor/lib/modules
+#                     (do.modules=1 installs the zip's modules/ tree live).
+# Layout evidence (forensic, Oct 2026 nightly): official vendor_boot ramdisk
+# contains ONLY fstab (no modules, no modules.load); all 87 modules plus
+# modules.load/dep/alias/softdep live in vendor.img /lib/modules. So modules
+# must go to live /vendor - a vendor_boot injection would sit unloaded while
+# stock (wrong-CRC) modules stay live. Recovery is never touched.
 
 ### AnyKernel setup
 # begin properties
@@ -28,9 +31,8 @@ supported.versions=
 supported.patchlevels=
 supported.vendorpatchlevels=
 '; } # end properties
-# NOTE: do.modules=1 is conventional for kernel zips; on this layout the
-# modules travel via vendor_ramdisk/ (vendor_boot), not a live-partition
-# modules/ dir, so there is no live-fs install step.
+# NOTE: do.modules=1 installs this zip's modules/vendor/... tree onto the
+# live vendor partition (that's what the flag is for).
 
 
 ### AnyKernel install
@@ -49,30 +51,10 @@ PATCH_VBMETA_FLAG=auto;
 # import functions/variables and setup patching - see for reference (DO NOT REMOVE)
 . tools/ak3-core.sh;
 
-# boot install: new Image, stock ramdisk+dtb preserved
+# boot install: new Image, stock ramdisk+dtb preserved.
+# Then AnyKernel's modules step installs modules/vendor/... to /vendor.
+# Verify on first flash: Wi-Fi, Bluetooth, camera, `lsmod` count vs
+# MODULES.txt in the release notes, and `dmesg | grep -i vers` clean.
 dump_boot;
 write_boot;
 ## end boot install
-
-
-## vendor_boot files attributes
-vendor_boot_attributes() {
-set_perm_recursive 0 0 755 644 "$RAMDISK"/*;
-set_perm_recursive 0 0 750 750 "$RAMDISK"/init* "$RAMDISK"/sbin;
-} # end attributes
-
-# vendor_boot shell variables (A-only device: no slot suffix)
-BLOCK=vendor_boot;
-IS_SLOT_DEVICE=0;
-RAMDISK_COMPRESSION=auto;
-PATCH_VBMETA_FLAG=auto;
-
-# reset for vendor_boot patching
-reset_ak;
-
-# vendor_boot install: inject vendor_ramdisk/ (our modules) into a repack of
-# the stock vendor_boot, then flash. Verify on first flash: Wi-Fi, Bluetooth,
-# camera + `lsmod` count vs MODULES.txt in the release notes.
-dump_boot;
-write_boot;
-## end vendor_boot install

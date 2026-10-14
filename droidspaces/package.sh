@@ -23,29 +23,38 @@ sed "s/@DEVICE@/${DEVICE}/g; s/@REL@/${REL}/g" "${HERE}/anykernel.template.sh" >
 # 1. kernel image
 cp "${KROOT}/arch/arm64/boot/Image" "${STAGE}/Image"
 
-# 2. modules: ship every BUILT .ko, keep modules.load verbatim as the load
-#    order list. Rationale: modules.load is a platform-wide superset shared
-#    across sm7325 devices (a52sxq/a73xq/m52xq list 87/86/90 entries incl.
-#    codecs none of them build - e.g. camera.ko has no Kconfig anywhere).
-#    Official builds from this same defconfig ship the same ~54 modules;
-#    init first-stage loads what exists and skips the rest, exactly as stock.
-#    So: missing entries are warnings, NOT fatal. The floor assert below is
-#    what catches a genuinely broken build (e.g. dead toolchain).
-mkdir -p "${STAGE}/vendor_ramdisk/lib/modules"
+# 2. modules: ship every BUILT .ko under modules/vendor/lib/modules (installed
+#    live onto /vendor by do.modules=1), plus the load-order list.
+#    Layout rationale (verified against the official nightly's vendor.img):
+#    official vendor_boot ramdisk holds ONLY fstab - all 87 modules plus
+#    modules.load/dep/alias/softdep live in vendor.img /lib/modules. So this
+#    is where rebuilt modules must go; a vendor_boot injection would sit
+#    unloaded while stock wrong-CRC modules stay live (dead Wi-Fi/BT/etc).
+#    modules.load is a platform-wide superset shared across sm7325 devices;
+#    entries no tree builds are skipped with a warning - init first-stage
+#    skips absentees exactly as stock does. The floor assert below is what
+#    catches a genuinely broken build (e.g. dead toolchain).
+mkdir -p "${STAGE}/modules/vendor/lib/modules"
 : > "${OUT}/MODULES.txt"
 : > "${OUT}/MISSING.txt"
 while IFS= read -r mod; do
   [ -z "$mod" ] && continue
   # modules land next to their drivers (in-tree build); match exact filename
   f="$(find "${KROOT}" -name "${mod}" 2>/dev/null | head -1)"
+  if [ -z "$f" ] && [ "$mod" = "qca_cld3_wlan.ko" ]; then
+    # Proven by forensics: official qca_cld3_wlan.ko identifies internally as
+    # name=wlan - Lineage renames the built wlan.ko at install time. Mirror it.
+    f="$(find "${KROOT}" -name "wlan.ko" 2>/dev/null | head -1)"
+    [ -n "$f" ] && echo "RENAME: wlan.ko -> qca_cld3_wlan.ko (matches official layout)"
+  fi
   if [ -z "$f" ]; then echo "SKIP (not built from this tree, init skips it too): ${mod}" | tee -a "${OUT}/MISSING.txt"; continue; fi
-  cp "$f" "${STAGE}/vendor_ramdisk/lib/modules/"
+  cp "$f" "${STAGE}/modules/vendor/lib/modules/${mod}"
   echo "${mod} <= ${f}" >> "${OUT}/MODULES.txt"
 done < "${HERE}/modules.load.${DEVICE}"
-cp "${HERE}/modules.load.${DEVICE}" "${STAGE}/vendor_ramdisk/lib/modules/modules.load"
-N_BUILT="$(wc -l < "${OUT}/MODULES.txt")"
+cp "${HERE}/modules.load.${DEVICE}" "${STAGE}/modules/vendor/lib/modules/modules.load"
+N_BUILT="$(grep -c "\.ko <=" "${OUT}/MODULES.txt")"
 echo "modules packaged: ${N_BUILT}"
-[ "${N_BUILT}" -ge 50 ] || { echo "FLOOR FAIL: only ${N_BUILT} modules (expected ~54) - toolchain/build broken?"; exit 1; }
+[ "${N_BUILT}" -ge 50 ] || { echo "FLOOR FAIL: only ${N_BUILT} modules (expected ~87) - toolchain/build broken?"; exit 1; }
 
 # 3. zip it
 DATE="$(date -u +%Y%m%d)"
