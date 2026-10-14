@@ -143,3 +143,7 @@ obj-$(CONFIG_INTEL_ISH_HID)	+= intel-ish-hid/
 obj-$(INTEL_ISH_FIRMWARE_DOWNLOADER)	+= intel-ish-hid/
 
 obj-$(CONFIG_HID_QVR)		+= hid-qvr.o hid-trace.o
+# hid-trace.o re-includes its local header through TRACE_INCLUDE_PATH=.,
+# so it needs its own directory on the search path (missing upstream;
+# same class of fix as kernel/sched/walt trace.o).
+CFLAGS_hid-trace.o := -I$(src)

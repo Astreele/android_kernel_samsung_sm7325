@@ -11,6 +11,9 @@ endif
 
 ccflags-y += -I$(srctree)/techpack/camera/include/uapi/camera
 ccflags-y += -I$(srctree)
+# cam_trace.o re-includes cam_utils/cam_trace.h through TRACE_INCLUDE_PATH=.,
+# which needs the subdirectory on the search path (same fix class).
+ccflags-y += -I$(src)/cam_utils
 
 camera-y := \
 	cam_req_mgr/cam_req_mgr_core.o \

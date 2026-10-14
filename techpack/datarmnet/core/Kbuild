@@ -1,3 +1,6 @@
+# rmnet_handlers.o re-includes the local rmnet_trace.h through
+# TRACE_INCLUDE_PATH=., which needs this directory on the search path.
+ccflags-y += -I$(src)
 obj-m += rmnet_core.o
 obj-m += rmnet_ctl.o
 rmnet_core-y := rmnet_config.o rmnet_handlers.o rmnet_descriptor.o \
