@@ -101,7 +101,11 @@ LINUX_INC +=	-Iinclude/linux
 INCS +=		$(COMMON_INC) \
 		$(UAPI_INC)
 
+# The TUs' quoted "physical_layer/inc/..." includes resolve against this
+# directory. (AUDIO_ROOT above points at a kernel/msm-5.4 layout that does
+# not exist in this tree, so INCS alone cannot cover them.)
 ccflags-y += $(INCS)
+ccflags-y += -I$(src)
 
 
 CDEFINES +=	-DANI_LITTLE_BYTE_ENDIAN \
